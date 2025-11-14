@@ -1,5 +1,9 @@
 use crate::downloader;
 use eframe::egui;
+use rfd::FileDialog;
+use std::f32::INFINITY;
+use std::path::PathBuf;
+use std::sync::mpsc::{Receiver, channel};
 
 pub fn run_gui() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions::default();
@@ -10,19 +14,41 @@ pub fn run_gui() -> Result<(), eframe::Error> {
     )
 }
 
-#[derive(Default)]
 struct CrabDL {
     current_url: String,
+    download_dir: String,
     urls: Vec<String>,
+    dir_receiver: Option<Receiver<PathBuf>>,
+}
+
+impl Default for CrabDL {
+    fn default() -> Self {
+        let download_dir = dirs::home_dir()
+            .and_then(|p| p.to_str().map(|s| format!("{}/Downloads/", s)))
+            .unwrap_or_else(|| "./".to_string());
+        Self {
+            current_url: String::new(),
+            download_dir,
+            urls: Vec::new(),
+            dir_receiver: None,
+        }
+    }
 }
 
 impl eframe::App for CrabDL {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        let download_dir = "/home/benjamin/Downloads/";
+        let download_dir = format!("{}", &self.download_dir);
         // for loading images
         egui_extras::install_image_loaders(ctx);
         // ui scaling
         ctx.set_pixels_per_point(1.2);
+
+        if let Some(rx) = &self.dir_receiver {
+            if let Ok(path) = rx.try_recv() {
+                self.download_dir = path.to_string_lossy().to_string();
+                self.dir_receiver = None;
+            }
+        }
 
         egui::TopBottomPanel::top("header").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -43,10 +69,31 @@ impl eframe::App for CrabDL {
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.horizontal(|ui| {
+                        ui.label("Download directory:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.download_dir)
+                                .desired_width(INFINITY),
+                        );
+                    });
+                    ui.add_space(5.0);
+                    if ui.button("Choose Download Directory").clicked() {
+                        let (tx, rx) = channel();
+                        self.dir_receiver = Some(rx);
+                        let ctx = ctx.clone();
+
+                        std::thread::spawn(move || {
+                            if let Some(path) = FileDialog::new().pick_folder() {
+                                tx.send(path).ok();
+                                ctx.request_repaint(); // Wake up the UI
+                            }
+                        });
+                    }
+                    ui.add_space(5.0);
+                    ui.horizontal(|ui| {
                         ui.label("URL:");
                         ui.add(
                             egui::TextEdit::singleline(&mut self.current_url)
-                                .min_size(egui::vec2(280.0, 0.0)),
+                                .desired_width(INFINITY),
                         );
                     });
                     ui.add_space(5.0);
@@ -74,7 +121,7 @@ impl eframe::App for CrabDL {
                     if ui.button("Download all!").clicked() && !self.urls.is_empty() {
                         println!("Downloading {} files", self.urls.len());
                         let url_refs: Vec<&String> = self.urls.iter().collect();
-                        downloader::initiate_download(download_dir, &url_refs);
+                        downloader::initiate_download(&download_dir, &url_refs);
                     }
                 });
             });
