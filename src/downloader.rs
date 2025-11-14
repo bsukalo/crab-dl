@@ -94,20 +94,20 @@ fn get_extension(url: &str) -> Result<String, Box<dyn std::error::Error>> {
     Ok(".bin".to_string())
 }
 
-pub fn initiate_download(download_dir: &str, urls: &Vec<&String>) {
+pub fn initiate_download(
+    download_dir: &str,
+    urls: &Vec<&String>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let download_tasks: Vec<_> = urls
         .iter()
         .map(|url| {
-            let filename = format_filename(download_dir).unwrap();
-            let extension = get_extension(url).unwrap();
+            let filename = format_filename(download_dir)?;
+            let extension = get_extension(url)?;
             let path = format!("{}download_{:02}{}", download_dir, filename, extension);
-
-            // creates empty placeholder file
             File::create(&path).ok();
-
-            (url.to_string(), path)
+            Ok((url.to_string(), path))
         })
-        .collect();
+        .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
 
     let mp = MultiProgress::new();
 
@@ -117,10 +117,12 @@ pub fn initiate_download(download_dir: &str, urls: &Vec<&String>) {
         .for_each(|(idx, (url, path))| {
             let client = Client::new();
             match download_file(&client, url, path, &mp) {
-                Ok(_) => println!("downloaded file {}", idx + 1),
-                Err(e) => println!("download {} failed: {}", idx + 1, e),
+                Ok(_) => println!("Downloaded file {}", idx + 1),
+                Err(e) => println!("Download {} failed: {}", idx + 1, e),
             }
         });
+
+    Ok(())
 }
 
 pub fn run_cli() {
@@ -133,6 +135,16 @@ pub fn run_cli() {
     }
 
     if let Some(str) = download_dir.to_str() {
-        initiate_download(str, &urls);
+        match initiate_download(str, &urls) {
+            Ok(_) => {
+                println!("Downloads completed!");
+            }
+            Err(e) => {
+                println!(
+                    "Download failed: {}\nUsage: crab-dl <DIRECTORY> <URL>...",
+                    e
+                );
+            }
+        };
     }
 }

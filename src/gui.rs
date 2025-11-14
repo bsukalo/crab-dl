@@ -19,6 +19,7 @@ struct CrabDL {
     download_dir: String,
     urls: Vec<String>,
     dir_receiver: Option<Receiver<PathBuf>>,
+    error: Option<String>,
 }
 
 impl Default for CrabDL {
@@ -31,6 +32,7 @@ impl Default for CrabDL {
             download_dir,
             urls: Vec::new(),
             dir_receiver: None,
+            error: None,
         }
     }
 }
@@ -119,9 +121,22 @@ impl eframe::App for CrabDL {
                     ui.separator();
                     ui.add_space(5.0);
                     if ui.button("Download all!").clicked() && !self.urls.is_empty() {
-                        println!("Downloading {} files", self.urls.len());
+                        println!("Downloading {} file(s)", self.urls.len());
                         let url_refs: Vec<&String> = self.urls.iter().collect();
-                        downloader::initiate_download(&download_dir, &url_refs);
+
+                        match downloader::initiate_download(&download_dir, &url_refs) {
+                            Ok(_) => {
+                                self.error = None;
+                                println!("Downloads completed!");
+                            }
+                            Err(e) => {
+                                self.error = Some(format!("Download failed: {}", e));
+                            }
+                        }
+                    }
+                    if let Some(error_msg) = &self.error {
+                        ui.colored_label(egui::Color32::RED, error_msg);
+                        ui.add_space(5.0);
                     }
                 });
             });
